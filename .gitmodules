@@ -1,7 +1,3 @@
 [submodule "libraries/libnbtplusplus"]
 path = libraries/libnbtplusplus
 url = https://github.com/PrismLauncher/libnbtplusplus.git
-
-GitHub (https://github.com/PrismLauncher/libnbtplusplus.git)
-GitHub - PrismLauncher/libnbtplusplus: A C++ library for Minecraft's file format NBT
-A C++ library for Minecraft's file format NBT. Contribute to PrismLauncher/libnbtplusplus development by creating an account on GitHub.
