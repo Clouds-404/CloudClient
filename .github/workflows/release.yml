@@ -1,0 +1,126 @@
+name: Build Application and Make Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions: {}
+
+jobs:
+  build_release:
+    name: Build Release
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      # Required for Azure Trusted Signing
+      id-token: write
+      # Required for vcpkg binary cache
+      packages: write
+    with:
+      build-type: Release
+      environment: Release
+    secrets: inherit
+
+  create_release:
+    needs: build_release
+    permissions:
+      contents: write
+    runs-on: ubuntu-slim
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: "true"
+          path: "CloudClient-source"
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+      - name: Grab and store version
+        run: |
+          tag_name=$(echo ${{ github.ref }} | grep -oE "[^/]+$")
+          echo "VERSION=$tag_name" >> $GITHUB_ENV
+      - name: Package artifacts properly
+        run: |
+          mv ${{ github.workspace }}/CloudClient-source CloudClient-${{ env.VERSION }}
+          mv CloudClient-Linux-Qt6-Portable*/CloudClient-portable.tar.gz CloudClient-Linux-Qt6-Portable-${{ env.VERSION }}.tar.gz
+          mv CloudClient-Linux-aarch64-Qt6-Portable*/CloudClient-portable.tar.gz CloudClient-Linux-aarch64-Qt6-Portable-${{ env.VERSION }}.tar.gz
+          mv CloudClient-*.AppImage/CloudClient-*-x86_64.AppImage CloudClient-Linux-x86_64.AppImage
+          mv CloudClient-*.AppImage.zsync/CloudClient-*-x86_64.AppImage.zsync CloudClient-Linux-x86_64.AppImage.zsync
+          mv CloudClient-*.AppImage/CloudClient-*-aarch64.AppImage CloudClient-Linux-aarch64.AppImage
+          mv CloudClient-*.AppImage.zsync/CloudClient-*-aarch64.AppImage.zsync CloudClient-Linux-aarch64.AppImage.zsync
+          mv CloudClient-macOS*/CloudClient.zip CloudClient-macOS-${{ env.VERSION }}.zip
+          mv CloudClient-macOS*/CloudClient.dmg CloudClient-macOS-${{ env.VERSION }}.dmg
+
+          tar --exclude='.git' -czf CloudClient-${{ env.VERSION }}.tar.gz CloudClient-${{ env.VERSION }}
+
+          for d in CloudClient-Windows-MSVC*; do
+            cd "${d}" || continue
+            LEGACY="$(echo -n ${d} | grep -o Legacy || true)"
+            ARM64="$(echo -n ${d} | grep -o arm64 || true)"
+            INST="$(echo -n ${d} | grep -o Setup || true)"
+            PORT="$(echo -n ${d} | grep -o Portable || true)"
+            NAME="CloudClient-Windows-MSVC"
+            test -z "${LEGACY}" || NAME="${NAME}-Legacy"
+            test -z "${ARM64}" || NAME="${NAME}-arm64"
+            test -z "${PORT}" || NAME="${NAME}-Portable"
+            test -z "${INST}" || mv CloudClient-*.exe ../${NAME}-Setup-${{ env.VERSION }}.exe
+            test -n "${INST}" || zip -r -9 "../${NAME}-${{ env.VERSION }}.zip" *
+            cd ..
+          done
+
+          for d in CloudClient-Windows-MinGW-w64*; do
+            cd "${d}" || continue
+            INST="$(echo -n ${d} | grep -o Setup || true)"
+            PORT="$(echo -n ${d} | grep -o Portable || true)"
+            NAME="CloudClient-Windows-MinGW-w64"
+            test -z "${PORT}" || NAME="${NAME}-Portable"
+            test -z "${INST}" || mv CloudClient-*.exe ../${NAME}-Setup-${{ env.VERSION }}.exe
+            test -n "${INST}" || zip -r -9 "../${NAME}-${{ env.VERSION }}.zip" *
+            cd ..
+          done
+
+          for d in CloudClient-Windows-MinGW-arm64*; do
+            cd "${d}" || continue
+            INST="$(echo -n ${d} | grep -o Setup || true)"
+            PORT="$(echo -n ${d} | grep -o Portable || true)"
+            NAME="CloudClient-Windows-MinGW-arm64"
+            test -z "${PORT}" || NAME="${NAME}-Portable"
+            test -z "${INST}" || mv CloudClient-*.exe ../${NAME}-Setup-${{ env.VERSION }}.exe
+            test -n "${INST}" || zip -r -9 "../${NAME}-${{ env.VERSION }}.zip" *
+            cd ..
+          done
+
+      - name: Create release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref }}
+          name: CloudClient ${{ env.VERSION }}
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            CloudClient-Linux-x86_64.AppImage
+            CloudClient-Linux-x86_64.AppImage.zsync
+            CloudClient-Linux-aarch64.AppImage
+            CloudClient-Linux-aarch64.AppImage.zsync
+            CloudClient-Linux-Qt6-Portable-${{ env.VERSION }}.tar.gz
+            CloudClient-Linux-aarch64-Qt6-Portable-${{ env.VERSION }}.tar.gz
+            CloudClient-Windows-MinGW-w64-${{ env.VERSION }}.zip
+            CloudClient-Windows-MinGW-w64-Portable-${{ env.VERSION }}.zip
+            CloudClient-Windows-MinGW-w64-Setup-${{ env.VERSION }}.exe
+            CloudClient-Windows-MinGW-arm64-${{ env.VERSION }}.zip
+            CloudClient-Windows-MinGW-arm64-Portable-${{ env.VERSION }}.zip
+            CloudClient-Windows-MinGW-arm64-Setup-${{ env.VERSION }}.exe
+            CloudClient-Windows-MSVC-arm64-${{ env.VERSION }}.zip
+            CloudClient-Windows-MSVC-arm64-Portable-${{ env.VERSION }}.zip
+            CloudClient-Windows-MSVC-arm64-Setup-${{ env.VERSION }}.exe
+            CloudClient-Windows-MSVC-${{ env.VERSION }}.zip
+            CloudClient-Windows-MSVC-Portable-${{ env.VERSION }}.zip
+            CloudClient-Windows-MSVC-Setup-${{ env.VERSION }}.exe
+            CloudClient-macOS-${{ env.VERSION }}.zip
+            CloudClient-macOS-${{ env.VERSION }}.dmg
+            CloudClient-${{ env.VERSION }}.tar.gz
